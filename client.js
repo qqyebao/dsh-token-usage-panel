@@ -1,22 +1,19 @@
 /**
  * Client half: the sidebar "Usage" panel.
  *
- * The page is a plain aggregation over data this composition already
- * publishes — it never folds a session log and never prices a call:
+ * The page renders one projection — `tokenLedger`, published by this bundle's
+ * own Host half. It carries whole-session token/cost totals and the per-Turn
+ * ledger, so the panel depends on no other plugin for usage or pricing.
  *
- *   - `tokenUsage` (dsh-token-meter) — the four token buckets per session.
- *   - `tokenCost`  (dsh-token-usage-cost) — CNY cost per session, priced per
- *     billed call by its own time band and model.
- *
- * Both arrive as wire views on the session catalog (`ctx.sessions.list`):
- * live sessions carry them from the projection feed, cold sessions from the
- * persisted projection cache. A session whose cache row predates either unit
- * is filled in with `ctx.sessions.refreshProjections()` — a cold-safe exact
- * read the Host caches again — so the panel converges on complete data
- * without a single custom Host route.
+ * The ledger arrives as a wire view on the session catalog
+ * (`ctx.sessions.list`): live sessions carry it from the projection feed, cold
+ * sessions from the persisted projection cache. A session whose cache row
+ * predates the unit is filled in with `ctx.sessions.refreshProjections()` — a
+ * cold-safe exact read the Host caches again — so the panel converges on
+ * complete data without a custom Host route.
  */
 window.__ModuleLoader__.load({
-  id: 'dsh-token-usage-panel',
+  id: '@qqyebao/dsh-token-usage-panel',
   factory(require) {
     const React = require('react')
     const h = React.createElement
@@ -64,6 +61,8 @@ window.__ModuleLoader__.load({
       'pager.sizeAria': '每页显示的轮数',
       'section.sessions': '按会话统计 · 消耗 Top 5',
       'section.sessions.note': '{count} 次对话',
+      'section.sessions.noteRange': '{count} 次对话 · {range}',
+      'section.sessions.pending': '{count} 次对话 · 还有 {pending} 个会话汇总中',
       'section.records': '对话记录',
       'section.records.note': '共 {count} 轮 · 按时间倒序',
       'table.time': '时间',
@@ -73,7 +72,7 @@ window.__ModuleLoader__.load({
       'empty.title': '还没有可统计的对话',
       'empty.body': '发起一次对话后，这里会按项目与会话汇总 Token 和花费。',
       'notice.pending': '正在汇总 {count} 个会话…',
-      'notice.noCost': '没有找到花费数据：请确认已安装并启用「Token 用量与花费」插件（dsh-token-usage-cost），它提供 tokenCost 投影。',
+      'notice.noCost': '没有找到用量数据：本插件 Host 半边的 tokenLedger 投影没有注册（插件未启用，或当前组合没有会话投影服务）。',
       'notice.missing': '{count} 个会话暂无花费数据，点「重新汇总」可继续补齐。',
       'notice.noRefresh': '当前组合没有会话投影服务，只能显示已缓存的数据。',
       'notice.crashed': '用量面板渲染失败，请刷新页面后重试。',
@@ -147,6 +146,8 @@ window.__ModuleLoader__.load({
       'pager.sizeAria': 'Turns per page',
       'section.sessions': 'Cost by conversation · Top 5',
       'section.sessions.note': '{count} conversations',
+      'section.sessions.noteRange': '{count} conversations · {range}',
+      'section.sessions.pending': '{count} conversations · {pending} still loading',
       'section.records': 'Conversation records',
       'section.records.note': '{count} turns · newest first',
       'table.time': 'Time',
@@ -156,7 +157,7 @@ window.__ModuleLoader__.load({
       'empty.title': 'Nothing measured yet',
       'empty.body': 'Start a conversation and its tokens and cost will be summarized here by project and by conversation.',
       'notice.pending': 'Calculating {count} conversations…',
-      'notice.noCost': 'No cost data found: install and enable the Token usage & cost plugin (dsh-token-usage-cost), which publishes the tokenCost projection.',
+      'notice.noCost': 'No usage data found: the tokenLedger projection from this plugin’s Host half is not registered (plugin disabled, or this composition has no session projection service).',
       'notice.missing': '{count} conversations have no cost data yet; press “Recalculate” to fill more.',
       'notice.noRefresh': 'This composition has no session projection service; only cached values are shown.',
       'notice.crashed': 'The usage panel failed to render. Reload the page and try again.',
@@ -784,10 +785,12 @@ window.__ModuleLoader__.load({
         const row = objectOf(byId[id])
         if (row === undefined) continue
         const values = objectOf(row.projectionValues) ?? {}
-        const usage = usageTotals(values.tokenUsage)
-        const billed = objectOf(values.tokenCost)
-        const priced = billed !== undefined
-        const cost = priced ? Math.max(0, asNumber(billed.cost)) : 0
+        // The panel's own Host half publishes one ledger per Session: totals and
+        // the per-turn records. No other plugin's projection is consulted.
+        const ledger = objectOf(values.tokenLedger)
+        const usage = usageTotals(ledger === undefined ? undefined : ledger.tokens)
+        const priced = ledger !== undefined
+        const cost = priced ? Math.max(0, asNumber(ledger.cost)) : 0
         const tokens = usage === null ? 0 : usage.total
 
         // A Session can run in a Workspace directory without being attached to
@@ -796,8 +799,8 @@ window.__ModuleLoader__.load({
         // before falling back to a directory-only group.
         const workspace = workspaceBySession.get(id) ?? workspaceByPath.get(normalizedPath(row.cwd))
         const project = projectOf(workspace, row.cwd, t)
-        const models = priced && Array.isArray(billed.models)
-          ? billed.models
+        const models = priced && Array.isArray(ledger.models)
+          ? ledger.models
               .filter((entry) => objectOf(entry) !== undefined && typeof entry.model === 'string')
               .slice(0, 4)
           : []
@@ -806,15 +809,14 @@ window.__ModuleLoader__.load({
           : typeof row.title === 'string' && row.title !== ''
             ? row.title
             : id
-        const currency = priced && typeof billed.currency === 'string' && billed.currency !== ''
-          ? billed.currency
+        const currency = priced && typeof ledger.currency === 'string' && ledger.currency !== ''
+          ? ledger.currency
           : '¥'
 
         // The per-turn ledger drives every time-ranged view; a session the
         // catalog has not projected yet contributes session-level numbers only
         // until the fill pass lands.
-        const turnsView = objectOf(values.tokenTurns)
-        const turns = turnsView !== undefined && Array.isArray(turnsView.turns) ? turnsView.turns : []
+        const turns = priced && Array.isArray(ledger.turns) ? ledger.turns : []
         for (const entry of turns) {
           const turnUsage = usageTotals(objectOf(entry) === undefined ? undefined : entry.tokens)
           if (turnUsage === null || turnUsage.total <= 0) continue
@@ -830,9 +832,7 @@ window.__ModuleLoader__.load({
             cost: Math.max(0, asNumber(entry.cost)),
             peakCost: Math.max(0, asNumber(entry.peakCost)),
             idleCost: Math.max(0, asNumber(entry.idleCost)),
-            currency: typeof turnsView.currency === 'string' && turnsView.currency !== ''
-              ? turnsView.currency
-              : currency,
+            currency,
             models: Array.isArray(entry.models)
               ? entry.models.filter((model) => typeof model === 'string')
               : [],
@@ -849,10 +849,10 @@ window.__ModuleLoader__.load({
           usage,
           cost,
           priced,
-          peakCost: priced ? asNumber(billed.peakCost) : 0,
-          idleCost: priced ? asNumber(billed.idleCost) : 0,
+          peakCost: priced ? asNumber(ledger.peakCost) : 0,
+          idleCost: priced ? asNumber(ledger.idleCost) : 0,
           currency,
-          unpriced: priced && billed.unpriced === true,
+          unpriced: priced && ledger.unpriced === true,
           models,
           subagent: row.origin === 'subagent',
           project,
@@ -1748,18 +1748,10 @@ window.__ModuleLoader__.load({
           if (row.blank === true) continue
           if (attemptedRef.current.has(id)) continue
           const values = objectOf(row.projectionValues)
-          if (
-            values !== undefined &&
-            values.tokenUsage !== undefined &&
-            values.tokenCost !== undefined &&
-            values.tokenTurns !== undefined
-          ) {
-            continue
-          }
-          // A projected session with no tokens yet has nothing to price, so a
-          // cold read would only burn Host work.
-          const usage = usageTotals(values === undefined ? undefined : values.tokenUsage)
-          if (usage !== null && usage.total === 0) continue
+          if (values !== undefined && values.tokenLedger !== undefined) continue
+          // A session the catalog already reports as blank has nothing to price,
+          // so a cold read would only burn Host work.
+          if (row.blank === true) continue
           missing.push({ id, updatedAt: asNumber(row.updatedAt) })
         }
         // Newest first: the conversations a user looks for are the recent ones.
@@ -1866,6 +1858,13 @@ window.__ModuleLoader__.load({
       }
 
       const sessionMax = model.topSessions.reduce((max, entry) => Math.max(max, entry.cost), 0)
+      const rangeLabel = range === 'custom' ? t('range.custom') : t('range.' + range)
+      const sessionsNote =
+        pending > 0
+          ? t('section.sessions.pending', { count: totals.conversations, pending })
+          : model.ranged
+            ? t('section.sessions.noteRange', { count: totals.conversations, range: rangeLabel })
+            : t('section.sessions.note', { count: totals.conversations })
 
       const ranges = h(
         'div',
@@ -2099,7 +2098,7 @@ window.__ModuleLoader__.load({
               { className: styles.section + ' ' + styles.toneTokens },
               h(SectionHeading, {
                 title: t('section.sessions'),
-                note: t('section.sessions.note', { count: totals.conversations }),
+                note: sessionsNote,
               }),
               h(
                 'ul',

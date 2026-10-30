@@ -1,6 +1,6 @@
 {
   "meta": {
     "title": "Usage Panel",
-    "description": "Adds a Usage entry to the sidebar that totals tokens and cost, ranks the top 3 projects and top 5 conversations, and lists every conversation record. Reuses the existing tokenCost projection."
+    "description": "Adds a standalone Usage entry to the sidebar: its own Host projection totals tokens and cost per turn without depending on any other plugin, with time ranges, a project cost pie, top conversations and a paged turn log."
   }
 }
