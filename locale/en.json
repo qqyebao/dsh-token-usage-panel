@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Usage Panel",
+    "description": "Adds a Usage entry to the sidebar that totals tokens and cost, ranks the top 3 projects and top 5 conversations, and lists every conversation record. Reuses the existing tokenCost projection."
+  }
+}

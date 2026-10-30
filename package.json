@@ -1,0 +1,57 @@
+{
+  "name": "dsh-token-usage-panel",
+  "version": "1.2.0",
+  "description": "Adds a sidebar Usage panel that aggregates Token usage and cost across projects and conversations, reusing the token-usage-cost projection.",
+  "license": "MIT",
+  "author": "yebao",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/qqyebao/dsh-token-usage-panel.git"
+  },
+  "homepage": "https://github.com/qqyebao/dsh-token-usage-panel#readme",
+  "bugs": {
+    "url": "https://github.com/qqyebao/dsh-token-usage-panel/issues"
+  },
+  "keywords": [
+    "dsh",
+    "dsh-plugin",
+    "deepseek-harness",
+    "token",
+    "usage",
+    "cost",
+    "dashboard"
+  ],
+  "type": "module",
+  "exports": {
+    ".": "./index.js",
+    "./client": "./client.js",
+    "./locale/*.json": "./locale/*.json",
+    "./icon": "./icon.svg"
+  },
+  "files": [
+    "index.js",
+    "client.js",
+    "cordis.patch.yml",
+    "locale/zh.json",
+    "locale/en.json",
+    "icon.svg",
+    "README.md"
+  ],
+  "engines": {
+    "dsh": ">=0.2.1-rc.2"
+  },
+  "dsh": {
+    "manifestVersion": 1,
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "immediately": true,
+      "inject": [
+        "@deepseek-ai/dsh-client-ui-layout",
+        "@deepseek-ai/dsh-client-ui-sidebar"
+      ]
+    }
+  }
+}
