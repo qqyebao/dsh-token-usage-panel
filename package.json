@@ -1,6 +1,6 @@
 {
   "name": "@qqyebao/dsh-token-usage-panel",
-  "version": "2.0.0",
+  "version": "2.1.0",
   "description": "Standalone sidebar Usage panel: its own Host projection folds tokens and prices per turn, so it depends on no other plugin.",
   "license": "MIT",
   "author": "yebao",

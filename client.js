@@ -27,6 +27,8 @@ window.__ModuleLoader__.load({
     /** Default turns per page, and the page sizes the reader can pick. */
     const DEFAULT_TURN_PAGE_SIZE = 20
     const TURN_PAGE_SIZES = [10, 20, 50, 100]
+    /** Reported to the account Remote as this client's build identity. */
+    const CLIENT_VERSION = '2.1.0'
     /** Global time-range presets, in chip order; `all` is the default. */
     const RANGE_IDS = ['all', 'today', 'yesterday', 'beforeYesterday', 'last3', 'last7', 'last30']
 
@@ -95,6 +97,15 @@ window.__ModuleLoader__.load({
       'range.clear': '清除',
       'range.invalid': '开始时间需早于结束时间',
       'range.custom': '自定义',
+      'balance.label': '余额',
+      'balance.loading': '…',
+      'balance.signedOut': '未登录',
+      'balance.failed': '获取失败',
+      'balance.bonus': '赠送 {amount}',
+      'balance.updated': '更新于 {time}',
+      'balance.refresh': '点击刷新',
+      'balance.refreshing': '刷新中',
+      'balance.aria': '账户余额，点击刷新',
       'range.pickDate': '选择日期',
       'cal.date': '{year}年{month}月{day}日',
       'cal.monthTitle': '{year}年{month}月',
@@ -180,6 +191,15 @@ window.__ModuleLoader__.load({
       'range.clear': 'Clear',
       'range.invalid': 'Start must be before end',
       'range.custom': 'Custom',
+      'balance.label': 'Balance',
+      'balance.loading': '…',
+      'balance.signedOut': 'Signed out',
+      'balance.failed': 'Unavailable',
+      'balance.bonus': 'Bonus {amount}',
+      'balance.updated': 'Updated {time}',
+      'balance.refresh': 'Click to refresh',
+      'balance.refreshing': 'Refreshing',
+      'balance.aria': 'Account balance; click to refresh',
       'range.pickDate': 'Pick a date',
       'cal.date': '{year}-{month}-{day}',
       'cal.monthTitle': '{year}-{month}',
@@ -366,6 +386,13 @@ window.__ModuleLoader__.load({
       '.tup-rangeChip:hover{background:color-mix(in srgb,var(--tup-accent-tokens) 8%,transparent);color:color-mix(in srgb,var(--tup-accent-tokens) 72%,var(--dsw-alias-label-primary));border-color:color-mix(in srgb,var(--tup-accent-tokens) 30%,var(--dsw-alias-border-l2))}',
       '.tup-rangeChipActive{background:color-mix(in srgb,var(--tup-accent-tokens) 15%,transparent);border-color:color-mix(in srgb,var(--tup-accent-tokens) 46%,transparent);color:color-mix(in srgb,var(--tup-accent-tokens) 82%,var(--dsw-alias-label-primary));font-weight:500}',
       '.tup-rangeChip:focus-visible{outline:2px solid var(--tup-accent-tokens);outline-offset:2px}',
+      '.tup-balance{display:inline-flex;align-items:center;gap:6px;height:30px;padding:0 12px;border-radius:15px;border:.5px solid color-mix(in srgb,var(--tup-accent-cost) 30%,var(--dsw-alias-border-l2));background:color-mix(in srgb,var(--tup-accent-cost) 8%,transparent);color:var(--dsw-alias-label-secondary);font:inherit;font-size:12px;line-height:18px;cursor:pointer;transition:background .15s,border-color .15s}',
+      '.tup-balance:hover{background:color-mix(in srgb,var(--tup-accent-cost) 14%,transparent);border-color:color-mix(in srgb,var(--tup-accent-cost) 48%,var(--dsw-alias-border-l2))}',
+      '.tup-balance:focus-visible{outline:2px solid var(--tup-accent-cost);outline-offset:2px}',
+      '.tup-balance svg{width:14px;height:14px;flex:none;color:var(--tup-accent-cost)}',
+      '.tup-balanceLabel{color:var(--dsw-alias-label-secondary)}',
+      '.tup-balanceValue{color:color-mix(in srgb,var(--tup-accent-cost) 64%,var(--dsw-alias-label-primary));font-weight:600;font-variant-numeric:tabular-nums}',
+      '.tup-balanceMuted{color:var(--dsw-alias-label-secondary);font-weight:400}',
       '@media (width<=760px){.tup-content{padding:0 20px 40px}.tup-table th,.tup-table td{padding:8px 10px}.tup-table .tup-time{display:none}}',
     ].join('')
 
@@ -380,6 +407,10 @@ window.__ModuleLoader__.load({
       logo: 'tup-logo',
       subtitle: 'tup-subtitle',
       toolbar: 'tup-toolbar',
+      balance: 'tup-balance',
+      balanceLabel: 'tup-balanceLabel',
+      balanceValue: 'tup-balanceValue',
+      balanceMuted: 'tup-balanceMuted',
       rangeBar: 'tup-rangeBar',
       ranges: 'tup-ranges',
       rangeInputs: 'tup-rangeInputs',
@@ -1035,6 +1066,15 @@ window.__ModuleLoader__.load({
       )
     }
 
+    function CoinIcon() {
+      return h(
+        'svg',
+        { viewBox: '0 0 16 16', fill: 'none', 'aria-hidden': 'true', focusable: 'false' },
+        h('circle', { cx: 8, cy: 8, r: 5.9, stroke: 'currentColor', strokeWidth: 1.3 }),
+        h('path', { d: 'M6.1 5.4 8 8.2l1.9-2.8M8 8.2V11', stroke: 'currentColor', strokeWidth: 1.2, strokeLinecap: 'round', strokeLinejoin: 'round' }),
+      )
+    }
+
     function ChevronIcon({ direction }) {
       return h(
         'svg',
@@ -1614,6 +1654,52 @@ window.__ModuleLoader__.load({
       )
     }
 
+    /** Account balance pill; clicking it re-reads the balance Remote. */
+    function BalancePill({ balance, refreshing, t, onRefresh }) {
+      const ready = balance.status === 'ready'
+      const text = ready && balance.wallets.length > 0
+        ? balance.wallets
+            .map((wallet) => (wallet.currency === 'CNY' ? '¥' : '$') + String(wallet.balance))
+            .join(' · ')
+        : balance.status === 'loading'
+          ? t('balance.loading')
+          : balance.status === 'signedOut'
+            ? t('balance.signedOut')
+            : t('balance.failed')
+      const bonus = ready
+        ? balance.bonusWallets
+            .filter((wallet) => Number(wallet.balance) > 0)
+            .map((wallet) => (wallet.currency === 'CNY' ? '¥' : '$') + String(wallet.balance))
+        : []
+      const hint = [
+        bonus.length > 0 ? t('balance.bonus', { amount: bonus.join(' · ') }) : null,
+        balance.detail !== '' && balance.status !== 'ready' && balance.status !== 'signedOut'
+          ? balance.detail
+          : null,
+        balance.updatedAt > 0 ? t('balance.updated', { time: formatTime(balance.updatedAt) }) : null,
+        refreshing ? t('balance.refreshing') : t('balance.refresh'),
+      ]
+        .filter((part) => part !== null)
+        .join(' · ')
+      return h(
+        'button',
+        {
+          type: 'button',
+          className: styles.balance,
+          onClick: onRefresh,
+          title: hint,
+          'aria-label': t('balance.aria'),
+        },
+        h(CoinIcon),
+        h('span', { className: styles.balanceLabel }, t('balance.label')),
+        h(
+          'span',
+          { className: styles.balanceValue + (ready && balance.wallets.length > 0 ? '' : ' ' + styles.balanceMuted) },
+          text,
+        ),
+      )
+    }
+
     /** Previous/next paging for the turn table, plus its page-size choice. */
     function Pager({ page, pageCount, from, to, count, pageSize, pageSizes, t, onChange, onSizeChange }) {
       return h(
@@ -1704,6 +1790,7 @@ window.__ModuleLoader__.load({
       const useSessions = typeof props.useSessions === 'function' ? props.useSessions : USE_EMPTY_SESSIONS
       const useWorkspaces = typeof props.useWorkspaces === 'function' ? props.useWorkspaces : USE_EMPTY_WORKSPACES
       const refreshProjections = typeof props.refreshProjections === 'function' ? props.refreshProjections : undefined
+      const fetchBalance = typeof props.fetchBalance === 'function' ? props.fetchBalance : undefined
       const openSession = typeof props.openSession === 'function' ? props.openSession : undefined
 
       const sessions = useSessions(SELECT_ALL) ?? EMPTY_SESSIONS
@@ -1724,6 +1811,15 @@ window.__ModuleLoader__.load({
       const [page, setPage] = React.useState(1)
       const [pageSize, setPageSize] = React.useState(DEFAULT_TURN_PAGE_SIZE)
       const [stalled, setStalled] = React.useState(false)
+      const [balance, setBalance] = React.useState({
+        status: fetchBalance === undefined ? 'unavailable' : 'loading',
+        wallets: [],
+        bonusWallets: [],
+        updatedAt: 0,
+        detail: '',
+      })
+      const [balanceNonce, setBalanceNonce] = React.useState(0)
+      const [balanceRefreshing, setBalanceRefreshing] = React.useState(false)
 
       React.useEffect(
         () => () => {
@@ -1735,6 +1831,71 @@ window.__ModuleLoader__.load({
       // Fill the projections the session catalog does not carry yet. Each id is
       // attempted once per mount (or per manual refresh); the service is
       // single-flight and caches the exact read on the Host once it lands.
+      // The balance is account-level, not session-scoped, so it is read once on
+      // mount and again on demand; a ready value survives a failed refresh.
+      React.useEffect(() => {
+        if (fetchBalance === undefined) return undefined
+        let alive = true
+        setBalanceRefreshing(true)
+        let request
+        try {
+          request = Promise.resolve(fetchBalance())
+        } catch (error) {
+          request = Promise.reject(error)
+        }
+        request
+          .then((result) => {
+            if (!alive) return
+            const value = result !== undefined && result.ok === true ? result.value : undefined
+            if (value === undefined || value === null) {
+              const detail =
+                value === null
+                  ? ''
+                  : result !== undefined && result.ok === false
+                    ? String(result.error?.code ?? result.error?.message ?? 'remote error')
+                    : ''
+              setBalance({
+                status: value === null ? 'signedOut' : 'failed',
+                wallets: [],
+                bonusWallets: [],
+                updatedAt: Date.now(),
+                detail,
+              })
+              if (value !== null) console.warn('[token-usage-panel] balance read failed', detail)
+              return
+            }
+            if (value.status === 'ready') {
+              setBalance({
+                status: 'ready',
+                wallets: Array.isArray(value.value) ? value.value : [],
+                bonusWallets: Array.isArray(value.bonusWallets) ? value.bonusWallets : [],
+                updatedAt: Date.now(),
+              })
+            } else {
+              setBalance({ status: 'failed', wallets: [], bonusWallets: [], updatedAt: Date.now(), detail: 'platform' })
+              console.warn('[token-usage-panel] balance unavailable on the platform')
+            }
+          })
+          .catch((error) => {
+            if (!alive) return
+            const unavailable = error !== null && error !== undefined && error.code === 'unavailable'
+            setBalance({
+              status: unavailable ? 'unavailable' : 'failed',
+              wallets: [],
+              bonusWallets: [],
+              updatedAt: Date.now(),
+              detail: String(error?.message ?? error ?? 'remote error'),
+            })
+            if (!unavailable) console.warn('[token-usage-panel] balance read failed', error)
+          })
+          .finally(() => {
+            if (alive) setBalanceRefreshing(false)
+          })
+        return () => {
+          alive = false
+        }
+      }, [fetchBalance, balanceNonce])
+
       React.useEffect(() => {
         if (refreshProjections === undefined) return
         const catalog = objectOf(sessions) ?? {}
@@ -1949,6 +2110,14 @@ window.__ModuleLoader__.load({
         h(
           'div',
           { className: styles.toolbar },
+          balance.status !== 'unavailable'
+            ? h(BalancePill, {
+                balance,
+                refreshing: balanceRefreshing,
+                t,
+                onRefresh: () => setBalanceNonce((value) => value + 1),
+              })
+            : null,
           pending > 0 ? h('span', { className: styles.status, role: 'status' }, t('notice.pending', { count: pending })) : null,
           h(
             'button',
@@ -2265,16 +2434,40 @@ window.__ModuleLoader__.load({
         const t = locale.bind(NS)
         const sessions = ctx.get('sessions')
         const uiWorkspace = ctx.get('uiWorkspace')
-        const extraProps = () => ({
-          refreshProjections:
-            sessions !== undefined && typeof sessions.refreshProjections === 'function'
-              ? (id) => sessions.refreshProjections(id)
-              : undefined,
-          openSession:
-            uiWorkspace !== undefined && typeof uiWorkspace.openSession === 'function'
-              ? (id) => uiWorkspace.openSession(id)
-              : undefined,
+        const clientMetadata = () => ({
+          version: CLIENT_VERSION,
+          locale: locale.getLocale().active,
+          timezoneOffsetSeconds: -new Date().getTimezoneOffset() * 60,
         })
+        // The account namespace is mounted as its own `remote.account` Cordis
+        // service (a nested service under `remote`), so it is resolved through
+        // ctx.get rather than assumed to be a property of ctx.remote. Namespaces
+        // mount asynchronously after boot, so the lookup happens at call time.
+        const fetchBalance = () => {
+          try {
+            const account = ctx.get('remote.account') ?? ctx.get('remote')?.account
+            if (account === undefined || typeof account.getBalance !== 'function') {
+              const error = new Error('token-usage-panel: account remote unavailable')
+              error.code = 'unavailable'
+              return Promise.reject(error)
+            }
+            return Promise.resolve(account.getBalance(clientMetadata()))
+          } catch (error) {
+            return Promise.reject(error)
+          }
+        }
+        // These wrappers are created once: the slot may rebuild its props on
+        // every render, and a fresh function identity would re-run effects that
+        // depend on them (the balance read would loop).
+        const refreshProjections =
+          sessions !== undefined && typeof sessions.refreshProjections === 'function'
+            ? (id) => sessions.refreshProjections(id)
+            : undefined
+        const openSession =
+          uiWorkspace !== undefined && typeof uiWorkspace.openSession === 'function'
+            ? (id) => uiWorkspace.openSession(id)
+            : undefined
+        const extraProps = () => ({ fetchBalance, refreshProjections, openSession })
 
         // One panel id addresses both seats: the sidebar row selects it and the
         // main column dispatches the same key to this page.
